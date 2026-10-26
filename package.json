@@ -1,0 +1,46 @@
+{
+  "name": "@unified-devtools/react-native-core",
+  "version": "0.1.0",
+  "description": "Zero-native client SDK and plugin engine for React Native in Unified DevTools",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "react-native",
+    "devtools",
+    "unified-devtools",
+    "flipper",
+    "debugging"
+  ],
+  "author": "Unified DevTools Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/unified-devtools/react-native-core.git"
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0 || >=19.0.0",
+    "react-native": ">=0.70.0 || >=0.80.0 || >=0.83.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "react-native": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  }
+}
