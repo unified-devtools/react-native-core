@@ -1,5 +1,5 @@
 {
-  "name": "@unified-devtools/react-native-core",
+  "name": "@archie-dev/react-native-core",
   "version": "0.1.0",
   "description": "Zero-native client SDK and plugin engine for React Native in Unified DevTools",
   "main": "dist/index.js",
