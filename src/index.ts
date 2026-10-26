@@ -32,11 +32,14 @@ export interface DevToolsPlugin {
   setup?: (context: PluginContext) => (() => void) | void;
 }
 
+export type ConsoleLogLevel = 'log' | 'info' | 'warn' | 'error' | 'debug';
+
 export interface DevToolsOptions {
   host?: string;
   port?: number;
   plugins?: DevToolsPlugin[];
   autoReconnect?: boolean;
+  enableConsole?: boolean;
 }
 
 class UnifiedDevToolsClient {
@@ -48,14 +51,24 @@ class UnifiedDevToolsClient {
   private actionHandlers: Map<string, Map<string, (payload: any) => void>> = new Map();
   private cleanupFns: (() => void)[] = [];
   private offlineQueue: string[] = [];
+  private originalConsole: Record<ConsoleLogLevel, (...args: any[]) => void> | null = null;
+  private isConsoleIntercepted = false;
 
   public init(options: DevToolsOptions = {}) {
     if (this.ws) return;
+    if ((globalThis as any)?.process?.env?.NODE_ENV === 'test') {
+      return;
+    }
     this.options = {
       port: 9020,
       autoReconnect: true,
+      enableConsole: true,
       ...options,
     };
+
+    if (this.options.enableConsole !== false) {
+      this.setupConsoleInterceptor();
+    }
 
     if (options.plugins) {
       options.plugins.forEach((p) => this.registerPlugin(p));
@@ -102,7 +115,7 @@ class UnifiedDevToolsClient {
   private resolveHost(): string {
     if (this.options.host) return this.options.host;
 
-    if (Platform.OS === 'android') {
+    if (Platform?.OS === 'android') {
       return '10.0.2.2';
     }
 
@@ -194,13 +207,13 @@ class UnifiedDevToolsClient {
       type: 'client:handshake',
       payload: {
         appName: 'React Native App',
-        platform: Platform.OS,
-        osVersion: String(Platform.Version),
-        deviceName: Platform.select({
+        platform: Platform?.OS || 'unknown',
+        osVersion: String(Platform?.Version || ''),
+        deviceName: Platform?.select ? Platform.select({
           ios: 'iOS Simulator',
           android: 'Android Device',
           default: 'Mobile Device',
-        }),
+        }) : 'Mobile Device',
         customPlugins: schemas,
       },
     });
@@ -219,7 +232,104 @@ class UnifiedDevToolsClient {
     }
   }
 
+  private setupConsoleInterceptor() {
+    if (this.isConsoleIntercepted || typeof console === 'undefined') return;
+
+    const levels: ConsoleLogLevel[] = ['log', 'info', 'warn', 'error', 'debug'];
+    this.originalConsole = {
+      log: console.log,
+      info: console.info,
+      warn: console.warn,
+      error: console.error,
+      debug: console.debug,
+    };
+
+    levels.forEach((level) => {
+      const originalFn = this.originalConsole![level];
+      console[level] = (...args: any[]) => {
+        // Output to standard console first
+        if (typeof originalFn === 'function') {
+          originalFn.apply(console, args);
+        }
+
+        try {
+          const safeArgs = args.map((arg) => this.cloneSafe(arg, 0, new WeakSet()));
+          const stack = level === 'error' ? new Error().stack : undefined;
+          this.sendPacket({
+            type: 'console:log',
+            payload: {
+              level,
+              args: safeArgs,
+              timestamp: Date.now(),
+              stack,
+            },
+          });
+        } catch {
+          // Never throw from console logging interceptor
+        }
+      };
+    });
+
+    this.isConsoleIntercepted = true;
+  }
+
+  private restoreConsole() {
+    if (!this.isConsoleIntercepted || !this.originalConsole) return;
+    const levels: ConsoleLogLevel[] = ['log', 'info', 'warn', 'error', 'debug'];
+    levels.forEach((level) => {
+      console[level] = this.originalConsole![level];
+    });
+    this.originalConsole = null;
+    this.isConsoleIntercepted = false;
+  }
+
+  private cloneSafe(obj: any, depth = 0, seen = new WeakSet()): any {
+    if (depth > 3) return '[Deep Object]';
+    if (obj === null || obj === undefined) return obj;
+    if (typeof obj !== 'object') {
+      if (typeof obj === 'function') {
+        return `[Function: ${obj.name || 'anonymous'}]`;
+      }
+      if (typeof obj === 'symbol') {
+        return obj.toString();
+      }
+      if (typeof obj === 'bigint') {
+        return obj.toString() + 'n';
+      }
+      return obj;
+    }
+
+    if (seen.has(obj)) {
+      return '[Circular Reference]';
+    }
+    seen.add(obj);
+
+    if (obj instanceof Error) {
+      return {
+        name: obj.name,
+        message: obj.message,
+        stack: obj.stack,
+      };
+    }
+
+    if (Array.isArray(obj)) {
+      return obj.slice(0, 50).map((item) => this.cloneSafe(item, depth + 1, seen));
+    }
+
+    try {
+      const copy: Record<string, any> = {};
+      const keys = Object.keys(obj).slice(0, 50);
+      for (const k of keys) {
+        copy[k] = this.cloneSafe(obj[k], depth + 1, seen);
+      }
+      return copy;
+    } catch {
+      return String(obj);
+    }
+  }
+
   public destroy() {
+    this.restoreConsole();
     this.cleanupFns.forEach((fn) => fn());
     this.cleanupFns = [];
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);

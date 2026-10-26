@@ -25,11 +25,13 @@ export interface DevToolsPlugin {
     schema?: CustomPluginSchema;
     setup?: (context: PluginContext) => (() => void) | void;
 }
+export type ConsoleLogLevel = 'log' | 'info' | 'warn' | 'error' | 'debug';
 export interface DevToolsOptions {
     host?: string;
     port?: number;
     plugins?: DevToolsPlugin[];
     autoReconnect?: boolean;
+    enableConsole?: boolean;
 }
 declare class UnifiedDevToolsClient {
     private ws;
@@ -40,6 +42,8 @@ declare class UnifiedDevToolsClient {
     private actionHandlers;
     private cleanupFns;
     private offlineQueue;
+    private originalConsole;
+    private isConsoleIntercepted;
     init(options?: DevToolsOptions): void;
     registerPlugin(plugin: DevToolsPlugin): void;
     private resolveHost;
@@ -49,6 +53,9 @@ declare class UnifiedDevToolsClient {
     private flushQueue;
     private sendHandshake;
     private handleInbound;
+    private setupConsoleInterceptor;
+    private restoreConsole;
+    private cloneSafe;
     destroy(): void;
 }
 export declare const unifiedDevTools: UnifiedDevToolsClient;

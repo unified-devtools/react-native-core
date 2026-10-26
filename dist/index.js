@@ -14,15 +14,24 @@ class UnifiedDevToolsClient {
         this.actionHandlers = new Map();
         this.cleanupFns = [];
         this.offlineQueue = [];
+        this.originalConsole = null;
+        this.isConsoleIntercepted = false;
     }
     init(options = {}) {
         if (this.ws)
             return;
+        if (globalThis?.process?.env?.NODE_ENV === 'test') {
+            return;
+        }
         this.options = {
             port: 9020,
             autoReconnect: true,
+            enableConsole: true,
             ...options,
         };
+        if (this.options.enableConsole !== false) {
+            this.setupConsoleInterceptor();
+        }
         if (options.plugins) {
             options.plugins.forEach((p) => this.registerPlugin(p));
         }
@@ -61,7 +70,7 @@ class UnifiedDevToolsClient {
     resolveHost() {
         if (this.options.host)
             return this.options.host;
-        if (react_native_1.Platform.OS === 'android') {
+        if (react_native_1.Platform?.OS === 'android') {
             return '10.0.2.2';
         }
         try {
@@ -149,13 +158,13 @@ class UnifiedDevToolsClient {
             type: 'client:handshake',
             payload: {
                 appName: 'React Native App',
-                platform: react_native_1.Platform.OS,
-                osVersion: String(react_native_1.Platform.Version),
-                deviceName: react_native_1.Platform.select({
+                platform: react_native_1.Platform?.OS || 'unknown',
+                osVersion: String(react_native_1.Platform?.Version || ''),
+                deviceName: react_native_1.Platform?.select ? react_native_1.Platform.select({
                     ios: 'iOS Simulator',
                     android: 'Android Device',
                     default: 'Mobile Device',
-                }),
+                }) : 'Mobile Device',
                 customPlugins: schemas,
             },
         });
@@ -172,7 +181,99 @@ class UnifiedDevToolsClient {
             }
         }
     }
+    setupConsoleInterceptor() {
+        if (this.isConsoleIntercepted || typeof console === 'undefined')
+            return;
+        const levels = ['log', 'info', 'warn', 'error', 'debug'];
+        this.originalConsole = {
+            log: console.log,
+            info: console.info,
+            warn: console.warn,
+            error: console.error,
+            debug: console.debug,
+        };
+        levels.forEach((level) => {
+            const originalFn = this.originalConsole[level];
+            console[level] = (...args) => {
+                // Output to standard console first
+                if (typeof originalFn === 'function') {
+                    originalFn.apply(console, args);
+                }
+                try {
+                    const safeArgs = args.map((arg) => this.cloneSafe(arg, 0, new WeakSet()));
+                    const stack = level === 'error' ? new Error().stack : undefined;
+                    this.sendPacket({
+                        type: 'console:log',
+                        payload: {
+                            level,
+                            args: safeArgs,
+                            timestamp: Date.now(),
+                            stack,
+                        },
+                    });
+                }
+                catch {
+                    // Never throw from console logging interceptor
+                }
+            };
+        });
+        this.isConsoleIntercepted = true;
+    }
+    restoreConsole() {
+        if (!this.isConsoleIntercepted || !this.originalConsole)
+            return;
+        const levels = ['log', 'info', 'warn', 'error', 'debug'];
+        levels.forEach((level) => {
+            console[level] = this.originalConsole[level];
+        });
+        this.originalConsole = null;
+        this.isConsoleIntercepted = false;
+    }
+    cloneSafe(obj, depth = 0, seen = new WeakSet()) {
+        if (depth > 3)
+            return '[Deep Object]';
+        if (obj === null || obj === undefined)
+            return obj;
+        if (typeof obj !== 'object') {
+            if (typeof obj === 'function') {
+                return `[Function: ${obj.name || 'anonymous'}]`;
+            }
+            if (typeof obj === 'symbol') {
+                return obj.toString();
+            }
+            if (typeof obj === 'bigint') {
+                return obj.toString() + 'n';
+            }
+            return obj;
+        }
+        if (seen.has(obj)) {
+            return '[Circular Reference]';
+        }
+        seen.add(obj);
+        if (obj instanceof Error) {
+            return {
+                name: obj.name,
+                message: obj.message,
+                stack: obj.stack,
+            };
+        }
+        if (Array.isArray(obj)) {
+            return obj.slice(0, 50).map((item) => this.cloneSafe(item, depth + 1, seen));
+        }
+        try {
+            const copy = {};
+            const keys = Object.keys(obj).slice(0, 50);
+            for (const k of keys) {
+                copy[k] = this.cloneSafe(obj[k], depth + 1, seen);
+            }
+            return copy;
+        }
+        catch {
+            return String(obj);
+        }
+    }
     destroy() {
+        this.restoreConsole();
         this.cleanupFns.forEach((fn) => fn());
         this.cleanupFns = [];
         if (this.reconnectTimer)
