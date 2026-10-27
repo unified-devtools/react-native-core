@@ -64,8 +64,10 @@ jobs:
           git commit -am "chore(release): bump version to $NEW_VER [skip ci]"
           git push origin HEAD:${{ github.ref_name }}
 
-      - name: Check version against npm registry
+      - name: Check version against npm registry & GitHub
         id: check-version
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           LOCAL_VERSION=$(node -p "require('./package.json').version")
           PACKAGE_NAME=$(node -p "require('./package.json').name")
@@ -73,24 +75,32 @@ jobs:
           echo "Local version: $LOCAL_VERSION"
           echo "local_version=$LOCAL_VERSION" >> "$GITHUB_OUTPUT"
 
-          # Check if version exists on npm
+          # Check npm registry
           if npm view "$PACKAGE_NAME@$LOCAL_VERSION" version --silent > /dev/null 2>&1; then
-            echo "Version $LOCAL_VERSION already exists on npm. Skipping publish."
-            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+            echo "Version $LOCAL_VERSION already exists on npm."
+            echo "should_publish_npm=false" >> "$GITHUB_OUTPUT"
           else
-            echo "New version $LOCAL_VERSION detected. Ready to publish."
-            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+            echo "New version $LOCAL_VERSION detected for npm."
+            echo "should_publish_npm=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Check GitHub release
+          if gh release view "v$LOCAL_VERSION" > /dev/null 2>&1; then
+            echo "Release v$LOCAL_VERSION already exists on GitHub."
+            echo "should_release_gh=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Release v$LOCAL_VERSION needed on GitHub."
+            echo "should_release_gh=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Package tarball
-        if: steps.check-version.outputs.should_publish == 'true'
         id: pack
         run: |
           TARBALL=$(npm pack)
           echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
 
       - name: Publish to npm (Trusted Publishing / OIDC & Token)
-        if: steps.check-version.outputs.should_publish == 'true'
+        if: steps.check-version.outputs.should_publish_npm == 'true'
         run: |
           if [ -n "${{ secrets.NPM_TOKEN }}" ]; then
             echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
@@ -99,15 +109,17 @@ jobs:
           rm -f ~/.npmrc
 
       - name: Publish to GitHub Packages
-        if: steps.check-version.outputs.should_publish == 'true'
+        if: steps.check-version.outputs.should_release_gh == 'true' || steps.check-version.outputs.should_publish_npm == 'true'
         run: |
-          echo "@archie-dev:registry=https://npm.pkg.github.com" > ~/.npmrc
+          npm pkg set name="@unified-devtools/react-native-core"
+          echo "@unified-devtools:registry=https://npm.pkg.github.com" > ~/.npmrc
           echo "//npm.pkg.github.com/:_authToken=${{ secrets.GITHUB_TOKEN }}" >> ~/.npmrc
           npm publish || true
           rm -f ~/.npmrc
+          git checkout package.json
 
       - name: Create Git Tag & GitHub Release
-        if: steps.check-version.outputs.should_publish == 'true'
+        if: steps.check-version.outputs.should_release_gh == 'true'
         run: |
           VERSION="v${{ steps.check-version.outputs.local_version }}"
           git config user.name "github-actions[bot]"
