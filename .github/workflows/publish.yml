@@ -89,11 +89,14 @@ jobs:
           TARBALL=$(npm pack)
           echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
 
-      - name: Publish to npm (Trusted Publishing / OIDC)
+      - name: Publish to npm (Trusted Publishing / OIDC & Token)
         if: steps.check-version.outputs.should_publish == 'true'
-        run: npm publish --access public --provenance || npm publish --access public || true
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -n "${{ secrets.NPM_TOKEN }}" ]; then
+            echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+          fi
+          npm publish --access public --provenance || npm publish --access public
+          rm -f ~/.npmrc
 
       - name: Publish to GitHub Packages
         if: steps.check-version.outputs.should_publish == 'true'
