@@ -1,6 +1,6 @@
 {
   "name": "@archie-dev/react-native-core",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "publishConfig": {
     "access": "public"
   },
@@ -12,6 +12,14 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./plugin-mmkv": {
+      "types": "./dist/plugin-mmkv.d.ts",
+      "default": "./dist/plugin-mmkv.js"
+    },
+    "./plugin-async-storage": {
+      "types": "./dist/plugin-async-storage.d.ts",
+      "default": "./dist/plugin-async-storage.js"
     }
   },
   "files": [

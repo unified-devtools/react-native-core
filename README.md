@@ -52,6 +52,50 @@ if (__DEV__) {
 
 ---
 
+## Ready-to-Use Storage Plugins
+
+Inspect key-value storage in real-time inside Desktop DevTools without writing custom schema or column boilerplate:
+
+### 1. MMKV Storage Plugin (`@archie-dev/react-native-core/plugin-mmkv`)
+
+Inspect, search, and wipe keys in `react-native-mmkv` live from Desktop DevTools:
+
+```typescript
+import { initDevTools } from '@archie-dev/react-native-core';
+import { mmkvPlugin } from '@archie-dev/react-native-core/plugin-mmkv';
+import { MMKV } from 'react-native-mmkv';
+
+const storage = new MMKV();
+
+initDevTools({
+  plugins: [
+    mmkvPlugin(storage),
+  ],
+});
+```
+
+- **Features**: Live key/value browsing, data type detection (`string`, `number`, `boolean`, `object`), byte size calculation, and remote action support (**Reload Keys**, **Wipe Storage**).
+
+### 2. AsyncStorage Plugin (`@archie-dev/react-native-core/plugin-async-storage`)
+
+Browse serialized JSON payloads and string entries in AsyncStorage:
+
+```typescript
+import { initDevTools } from '@archie-dev/react-native-core';
+import { asyncStoragePlugin } from '@archie-dev/react-native-core/plugin-async-storage';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+initDevTools({
+  plugins: [
+    asyncStoragePlugin(AsyncStorage),
+  ],
+});
+```
+
+- **Features**: Automatic JSON deserialization, byte tracking, change notifications, and remote action support (**Reload Keys**, **Clear All**).
+
+---
+
 ## Custom Plugin API
 
 Create custom inspector panels inside **React Native Desktop DevTools** directly from React Native:
